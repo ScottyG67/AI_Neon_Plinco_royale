@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Neon Plinko Royale</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎱</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto+Mono:wght@400;700&display=swap');
+      
+      body {
+        font-family: 'Roboto Mono', monospace;
+        background-color: #0f0518;
+        color: #e0e0e0;
+        overflow: hidden;
+      }
+      
+      .font-display {
+        font-family: 'Orbitron', sans-serif;
+      }
+
+      /* CRT Scanline effect */
+      .scanlines::before {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+        z-index: 50;
+        background-size: 100% 2px, 3px 100%;
+        pointer-events: none;
+      }
+
+      .neon-text-pink {
+        text-shadow: 0 0 5px #ff00ff, 0 0 10px #ff00ff, 0 0 20px #ff00ff;
+      }
+      
+      .neon-text-cyan {
+        text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff, 0 0 20px #00ffff;
+      }
+
+      .neon-box {
+        box-shadow: 0 0 10px #ff00ff, inset 0 0 5px #ff00ff;
+      }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "canvas-confetti": "https://esm.sh/canvas-confetti@^1.9.4",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "matter-js": "https://esm.sh/matter-js@^0.20.0",
+    "socket.io-client": "https://esm.sh/socket.io-client@^4.8.3"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
