@@ -31,8 +31,8 @@ const App = () => {
           reconnectionAttempts: 20,
           reconnectionDelay: 2000,
           timeout: 20000,
-          transports: ['polling', 'websocket'], // Attempt polling first, then upgrade
-          path: '/socket.io' // Explicit default
+          transports: ['polling', 'websocket'] // Attempt polling first, then upgrade
+          // path defaults to '/socket.io' which matches the server
       });
       socketRef.current = socket;
 
@@ -145,14 +145,16 @@ const App = () => {
       setMusicPlaying(playing);
   };
 
-  const handleMusicVolChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = parseFloat(e.target.value);
+  const handleMusicVolChange = (e: React.ChangeEvent<HTMLInputElement> | React.FormEvent<HTMLInputElement>) => {
+      const target = e.target as HTMLInputElement;
+      const val = parseFloat(target.value);
       setMusicVolState(val);
       setMusicVolume(val);
   };
 
-  const handleSfxVolChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = parseFloat(e.target.value);
+  const handleSfxVolChange = (e: React.ChangeEvent<HTMLInputElement> | React.FormEvent<HTMLInputElement>) => {
+      const target = e.target as HTMLInputElement;
+      const val = parseFloat(target.value);
       setSfxVolState(val);
       setSfxVolume(val);
   };
@@ -209,7 +211,7 @@ const App = () => {
 
         {/* Settings Popover */}
         {showSettings && (
-            <div className="absolute top-14 right-0 z-50 bg-slate-900 border-2 border-slate-700 rounded-xl p-4 w-64 shadow-[0_0_20px_rgba(0,0,0,0.8)] backdrop-blur-xl animate-fade-in">
+            <div className="absolute top-14 right-0 z-[100] bg-slate-900 border-2 border-slate-700 rounded-xl p-4 w-64 shadow-[0_0_20px_rgba(0,0,0,0.8)] backdrop-blur-xl animate-fade-in" style={{ pointerEvents: 'auto' }}>
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="font-display text-sm text-cyan-400 uppercase tracking-widest">Audio Settings</h3>
                     <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-white">
@@ -230,7 +232,9 @@ const App = () => {
                             step="0.01" 
                             value={musicVol}
                             onChange={handleMusicVolChange}
-                            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-fuchsia-500"
+                            onInput={handleMusicVolChange}
+                            className="w-full accent-fuchsia-500 relative z-10"
+                            style={{ pointerEvents: 'auto', position: 'relative' }}
                         />
                     </div>
                     
@@ -246,7 +250,9 @@ const App = () => {
                             step="0.01" 
                             value={sfxVol}
                             onChange={handleSfxVolChange}
-                            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                            onInput={handleSfxVolChange}
+                            className="w-full accent-cyan-500 relative z-10"
+                            style={{ pointerEvents: 'auto', position: 'relative' }}
                         />
                     </div>
                 </div>

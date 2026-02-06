@@ -40,6 +40,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
   const [mousePos, setMousePos] = useState({ x: LOGICAL_WIDTH / 2, y: LOGICAL_HEIGHT / 2 });
   // Note: Lasers are now visual only in state, driven by socket events
   const [lasers, setLasers] = useState<Laser[]>([]);
+  // Track if the current player has dropped their ball this round
+  const [hasDroppedBall, setHasDroppedBall] = useState(false);
   
   // Refs for callbacks/state to avoid stale closures in event listeners/timeouts
   const callbacksRef = useRef({ onScoreUpdate, onGameFinish, onBallDestroyed });
@@ -78,6 +80,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
   const isSpectator = myPlayer?.isSpectator;
   const isPlayer = !isSpectator && myPlayer;
   const hasFinished = myPlayer?.finished;
+  
+  // Reset dropped ball state when game phase changes or player state resets
+  useEffect(() => {
+    if (phase !== 'PLAYING' || myPlayer?.finished === false) {
+      setHasDroppedBall(false);
+    }
+  }, [phase, myPlayer?.finished]);
 
   // Sync refs
   useEffect(() => {
@@ -443,11 +452,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
       resumeAudio();
 
       if (isPlayer && !hasFinished) {
+          // Prevent multiple ball drops - check if player has already dropped
+          if (hasDroppedBall) {
+              return; // Already dropped, can't drop again
+          }
+          
           // Drop Ball
           const padding = 20;
           const clampedX = Math.max(padding, Math.min(LOGICAL_WIDTH - padding, mousePos.x));
           if (socketRef.current) {
               socketRef.current.emit('drop_ball', { x: clampedX });
+              // Mark that we've dropped our ball
+              setHasDroppedBall(true);
               // Note: We do NOT spawn locally immediately. We wait for server echo.
               // This ensures everyone spawns at roughly same time.
           }
@@ -508,7 +524,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
   };
 
   const reticleColor = myPlayer ? myPlayer.color : '#fff';
-  const showReticle = (isPlayer && !hasFinished) || isSpectator;
+  // Show reticle only if player hasn't dropped their ball yet or is spectator
+  const showReticle = (isPlayer && !hasFinished && !hasDroppedBall) || isSpectator;
 
   return (
     <div 

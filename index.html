@@ -30,7 +30,7 @@
         bottom: 0;
         right: 0;
         background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-        z-index: 50;
+        z-index: 1;
         background-size: 100% 2px, 3px 100%;
         pointer-events: none;
       }
@@ -46,20 +46,103 @@
       .neon-box {
         box-shadow: 0 0 10px #ff00ff, inset 0 0 5px #ff00ff;
       }
+
+      /* Range Slider Styling */
+      input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        background: transparent;
+        cursor: pointer;
+        width: 100%;
+        height: 8px;
+        position: relative;
+        z-index: 10;
+        pointer-events: auto !important;
+        touch-action: pan-x;
+      }
+
+      /* Track Styling - Webkit */
+      input[type="range"]::-webkit-slider-track {
+        background: #334155;
+        height: 8px;
+        border-radius: 4px;
+      }
+
+      /* Track Styling - Firefox */
+      input[type="range"]::-moz-range-track {
+        background: #334155;
+        height: 8px;
+        border-radius: 4px;
+        border: none;
+      }
+
+      /* Thumb Styling - Webkit (Pink for Music) */
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        background: #ec4899;
+        height: 20px;
+        width: 20px;
+        border-radius: 50%;
+        border: 2px solid #fff;
+        cursor: grab;
+        box-shadow: 0 0 10px rgba(236, 72, 153, 0.5);
+        margin-top: -6px;
+        transition: all 0.2s ease;
+      }
+
+      input[type="range"]::-webkit-slider-thumb:hover {
+        transform: scale(1.1);
+        box-shadow: 0 0 15px rgba(236, 72, 153, 0.8);
+      }
+
+      input[type="range"]::-webkit-slider-thumb:active {
+        cursor: grabbing;
+        transform: scale(1.15);
+      }
+
+      /* Thumb Styling - Firefox (Pink for Music) */
+      input[type="range"]::-moz-range-thumb {
+        background: #ec4899;
+        height: 20px;
+        width: 20px;
+        border-radius: 50%;
+        border: 2px solid #fff;
+        cursor: grab;
+        box-shadow: 0 0 10px rgba(236, 72, 153, 0.5);
+        transition: all 0.2s ease;
+      }
+
+      input[type="range"]::-moz-range-thumb:hover {
+        transform: scale(1.1);
+        box-shadow: 0 0 15px rgba(236, 72, 153, 0.8);
+      }
+
+      input[type="range"]::-moz-range-thumb:active {
+        cursor: grabbing;
+        transform: scale(1.15);
+      }
+
+      /* Cyan thumb for SFX slider - Webkit */
+      input[type="range"].accent-cyan-500::-webkit-slider-thumb {
+        background: #06b6d4;
+        box-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+      }
+
+      input[type="range"].accent-cyan-500::-webkit-slider-thumb:hover {
+        box-shadow: 0 0 15px rgba(6, 182, 212, 0.8);
+      }
+
+      /* Cyan thumb for SFX slider - Firefox */
+      input[type="range"].accent-cyan-500::-moz-range-thumb {
+        background: #06b6d4;
+        box-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+      }
+
+      input[type="range"].accent-cyan-500::-moz-range-thumb:hover {
+        box-shadow: 0 0 15px rgba(6, 182, 212, 0.8);
+      }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "canvas-confetti": "https://esm.sh/canvas-confetti@^1.9.4",
-    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "matter-js": "https://esm.sh/matter-js@^0.20.0",
-    "socket.io-client": "https://esm.sh/socket.io-client@^4.8.3"
-  }
-}
-</script>
 </head>
   <body>
     <div id="root"></div>

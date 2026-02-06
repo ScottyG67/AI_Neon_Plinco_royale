@@ -10,23 +10,7 @@ async function startServer() {
     const app = express();
     app.enable('trust proxy');
 
-    // 1. Create HTTP Server (Raw, without app yet)
-    // We do this to ensure we can attach Socket.IO *before* Express
-    console.log('[Server] Creating HTTP server...');
-    const server = http.createServer();
-
-    // 2. Initialize Socket.IO
-    // Attach it to the raw server so it gets first crack at requests
-    console.log('[Server] Initializing Socket.IO...');
-    const io = new Server(server, {
-        cors: {
-            origin: "*",
-            methods: ["GET", "POST"]
-        },
-        transports: ['polling', 'websocket']
-    });
-
-    // 3. Initialize Vite Middleware
+    // 1. Initialize Vite Middleware first
     console.log('[Server] Initializing Vite middleware...');
     const vite = await createViteServer({
         server: { middlewareMode: true },
@@ -34,12 +18,27 @@ async function startServer() {
         root: __dirname,
     });
 
-    // 4. Express Middleware
-    app.use(vite.middlewares);
+    // 2. Create HTTP Server with Express app
+    console.log('[Server] Creating HTTP server...');
+    const server = http.createServer(app);
+
+    // 3. Initialize Socket.IO
+    // Attach it to the server - Socket.IO will handle /socket.io/* routes automatically
+    console.log('[Server] Initializing Socket.IO...');
+    const io = new Server(server, {
+        cors: {
+            origin: "*",
+            methods: ["GET", "POST"]
+        },
+        transports: ['polling', 'websocket']
+        // path defaults to '/socket.io' which matches the client
+    });
 
     // --- GAME STATE ---
     let players = [];
     let gamePhase = 'LOBBY';
+    // Track which players have dropped their ball this round
+    const droppedBalls = new Set();
 
     // --- SOCKET LOGIC ---
     io.on('connection', (socket) => {
@@ -59,6 +58,13 @@ async function startServer() {
         socket.on('start_game', () => {
             if (gamePhase === 'LOBBY') {
                 gamePhase = 'PLAYING';
+                // Reset finished state for all non-spectator players when starting
+                players = players.map(p => ({
+                    ...p,
+                    finished: !!p.isSpectator // Only spectators start as finished
+                }));
+                // Clear dropped balls tracking for new game
+                droppedBalls.clear();
                 io.emit('state_update', { players, phase: gamePhase });
             }
         });
@@ -67,6 +73,8 @@ async function startServer() {
             console.log('[Socket] Lobby reset requested');
             players = [];
             gamePhase = 'LOBBY';
+            // Clear dropped balls tracking
+            droppedBalls.clear();
             io.emit('state_update', { players, phase: gamePhase });
         });
 
@@ -74,13 +82,37 @@ async function startServer() {
             players = players.map(p => ({
                 ...p,
                 score: p.isSpectator ? 0 : null,
-                finished: !!p.isSpectator
+                finished: !!p.isSpectator // Reset finished state (spectators stay finished)
             }));
+            // Clear dropped balls tracking for new round
+            droppedBalls.clear();
             gamePhase = 'PLAYING';
             io.emit('state_update', { players, phase: gamePhase });
         });
 
         socket.on('drop_ball', (data) => {
+            // Prevent multiple ball drops per player per game
+            const playerIndex = players.findIndex(p => p.id === socket.id);
+            if (playerIndex === -1) return; // Player not found
+            
+            const player = players[playerIndex];
+            
+            // Check if player is a spectator (can't drop balls)
+            if (player.isSpectator) return;
+            
+            // Check if player has already dropped a ball this round
+            if (droppedBalls.has(socket.id)) return;
+            
+            // Check if player has already finished (scored or ball destroyed)
+            if (player.finished) return;
+            
+            // Check if game is in PLAYING phase
+            if (gamePhase !== 'PLAYING') return;
+            
+            // Mark that this player has dropped their ball
+            droppedBalls.add(socket.id);
+            
+            // Broadcast the ball spawn
             io.emit('spawn_ball', { ...data, playerId: socket.id });
         });
 
@@ -127,21 +159,17 @@ async function startServer() {
         }
     }
 
-    // 5. Catch-all for SPA (Explicitly ignore /socket.io requests)
-    app.get('*', (req, res, next) => {
-        if (req.url.startsWith('/socket.io/')) {
+    // 4. Express Middleware - Vite handles all routes except Socket.IO
+    // Socket.IO routes are automatically handled by the io instance above
+    // We need to skip Vite middleware for Socket.IO to let Socket.IO handle those requests
+    app.use((req, res, next) => {
+        // Skip Vite middleware for Socket.IO requests
+        if (req.url && req.url.startsWith('/socket.io/')) {
             return next();
         }
-        if (req.accepts('html')) {
-            res.sendFile(path.join(__dirname, 'index.html'));
-        } else {
-            next();
-        }
+        // Let Vite handle everything else (including SPA routing)
+        vite.middlewares(req, res, next);
     });
-
-    // 6. Attach Express to the server
-    // By doing this LAST, we ensure Socket.IO (attached earlier) handles its requests first.
-    server.on('request', app);
 
     const PORT = process.env.PORT || 8080;
     server.listen(PORT, () => {
