@@ -1,0 +1,128 @@
+{
+  "nested": {
+    "game": {
+      "nested": {
+        "GamePhase": {
+          "values": {
+            "LOBBY": 0,
+            "PLAYING": 1,
+            "GAME_OVER": 2
+          }
+        },
+        "Player": {
+          "fields": {
+            "id": {
+              "type": "string",
+              "id": 1
+            },
+            "name": {
+              "type": "string",
+              "id": 2
+            },
+            "color": {
+              "type": "int32",
+              "id": 3
+            },
+            "score": {
+              "type": "int32",
+              "id": 4
+            },
+            "isCheater": {
+              "type": "bool",
+              "id": 5
+            },
+            "isBot": {
+              "type": "bool",
+              "id": 6
+            },
+            "isSpectator": {
+              "type": "bool",
+              "id": 7
+            },
+            "finished": {
+              "type": "bool",
+              "id": 8
+            }
+          }
+        },
+        "GameState": {
+          "fields": {
+            "players": {
+              "rule": "repeated",
+              "type": "Player",
+              "id": 1
+            },
+            "phase": {
+              "type": "GamePhase",
+              "id": 2
+            }
+          }
+        },
+        "BallSpawn": {
+          "fields": {
+            "playerId": {
+              "type": "string",
+              "id": 1
+            },
+            "x": {
+              "type": "float",
+              "id": 2
+            }
+          }
+        },
+        "LaserData": {
+          "fields": {
+            "x1": {
+              "type": "float",
+              "id": 1
+            },
+            "y1": {
+              "type": "float",
+              "id": 2
+            },
+            "x2": {
+              "type": "float",
+              "id": 3
+            },
+            "y2": {
+              "type": "float",
+              "id": 4
+            },
+            "color": {
+              "type": "int32",
+              "id": 5
+            }
+          }
+        },
+        "BallRemoved": {
+          "fields": {
+            "ballId": {
+              "type": "string",
+              "id": 1
+            }
+          }
+        },
+        "ScoreUpdate": {
+          "fields": {
+            "points": {
+              "type": "int32",
+              "id": 1
+            }
+          }
+        },
+        "DestroyBall": {
+          "fields": {
+            "ballId": {
+              "type": "string",
+              "id": 1
+            },
+            "ballOwnerId": {
+              "type": "string",
+              "id": 2
+            }
+          }
+        }
+      }
+    }
+  }
+}

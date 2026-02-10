@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package game;
+
+// Game phase enum
+enum GamePhase {
+  LOBBY = 0;
+  PLAYING = 1;
+  GAME_OVER = 2;
+}
+
+// Player message
+message Player {
+  string id = 1;              // Socket ID (keep as string for compatibility)
+  string name = 2;            // Player name
+  int32 color = 3;            // Packed RGB as int32 (0xRRGGBB format)
+  int32 score = 4;            // -1 for null/not scored, otherwise score value
+  bool is_cheater = 5;
+  bool is_bot = 6;
+  bool is_spectator = 7;
+  bool finished = 8;
+}
+
+// Game state update message
+message GameState {
+  repeated Player players = 1;
+  GamePhase phase = 2;
+}
+
+// Ball spawn message
+message BallSpawn {
+  string player_id = 1;
+  float x = 2;                 // Drop X position
+}
+
+// Laser data message
+message LaserData {
+  float x1 = 1;
+  float y1 = 2;
+  float x2 = 3;
+  float y2 = 4;
+  int32 color = 5;            // Packed RGB as int32
+}
+
+// Ball removal message
+message BallRemoved {
+  string ball_id = 1;
+}
+
+// Score update message
+message ScoreUpdate {
+  int32 points = 1;
+}
+
+// Destroy ball message
+message DestroyBall {
+  string ball_id = 1;
+  string ball_owner_id = 2;
+}

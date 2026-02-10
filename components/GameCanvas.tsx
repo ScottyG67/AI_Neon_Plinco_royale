@@ -1,10 +1,17 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import Matter from 'matter-js';
+import Matter, { Events, Composite, World, Render, Runner, Engine } from 'matter-js';
 import confetti from 'canvas-confetti';
 import { Player, GamePhase } from '../types';
-import { CATEGORY_BALL, CATEGORY_PEG, CATEGORY_SENSOR, CATEGORY_WALL, POINT_DISTRIBUTION, COLORS } from '../constants';
+import { Laser } from '../types/game';
+import { POINT_DISTRIBUTION, COLORS } from '../constants';
 import { playBounce, playScore, playLaser, playExplosion, resumeAudio } from '../audio';
 import { Socket } from 'socket.io-client';
+import { LOGICAL_WIDTH, LOGICAL_HEIGHT } from '../utils/gameConstants';
+import { detectBoundaryEscape, createBoundaryBoundsMatter, detectBounce, createBounceDetectionState } from '../utils/collisionDetection';
+import { spawnBall } from '../utils/ballSpawning';
+import { createLaser } from '../utils/laserHandling';
+import { createMouseMoveHandler, createTouchMoveHandler, createTouchEndHandler, createPointerDownHandler, createClickHandler } from '../utils/inputHandlers';
+import { createPhysicsWorld } from '../utils/physicsSetup';
 
 interface GameCanvasProps {
   players: Player[];
@@ -15,19 +22,6 @@ interface GameCanvasProps {
   socket: Socket | null;
   myId: string | null;
 }
-
-interface Laser {
-    id: string;
-    x1: number;
-    y1: number;
-    x2: number;
-    y2: number;
-    color: string;
-    createdAt: number;
-}
-
-const LOGICAL_WIDTH = 600;
-const LOGICAL_HEIGHT = 800;
 
 export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreUpdate, onBallDestroyed, onGameFinish, socket, myId }) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -107,16 +101,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
           }
       };
 
-      const handleLaserFired = (data: any) => {
-          playLaser();
-          const newLaser: Laser = {
-              id: crypto.randomUUID(),
-              ...data,
-              createdAt: Date.now()
-          };
-          lasersRef.current.push(newLaser);
-          setLasers(prev => [...prev, newLaser]);
-      };
+    const handleLaserFired = (data: any) => {
+        playLaser();
+        const newLaser = createLaser(data.x1, data.y1, data.x2, data.y2, data.color);
+        lasersRef.current.push(newLaser);
+        setLasers(prev => [...prev, newLaser]);
+    };
 
       const handleBallRemoved = (data: { ballId: string }) => {
           playExplosion();
@@ -161,124 +151,31 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // 1. Setup Matter.js Engine
-    const Engine = Matter.Engine,
-          Render = Matter.Render,
-          Runner = Matter.Runner,
-          Bodies = Matter.Bodies,
-          Composite = Matter.Composite,
-          Events = Matter.Events,
-          World = Matter.World;
-
-    const engine = Engine.create();
-    engine.gravity.y = 0.5; 
-    engineRef.current = engine;
-
-    const width = LOGICAL_WIDTH;
-    const height = LOGICAL_HEIGHT;
-
-    // 2. Setup Render
-    const render = Render.create({
-      element: containerRef.current,
-      engine: engine,
-      options: {
-        width,
-        height,
-        wireframes: false,
-        background: 'transparent',
-        pixelRatio: window.devicePixelRatio
-      }
+    // Setup physics world using utility
+    const physicsWorld = createPhysicsWorld({
+      container: containerRef.current,
+      width: LOGICAL_WIDTH,
+      height: LOGICAL_HEIGHT,
+      gravity: 0.5
     });
-    renderRef.current = render;
 
-    // 3. Create Static World Objects
-    const wallOptions = { 
-      isStatic: true, 
-      render: { fillStyle: COLORS.wall },
-      collisionFilter: { category: CATEGORY_WALL },
-      friction: 0 
-    };
-    
-    const ground = Bodies.rectangle(width / 2, height + 50, width, 100, wallOptions);
-    const leftWall = Bodies.rectangle(-25, height / 2, 50, height * 2, wallOptions);
-    const rightWall = Bodies.rectangle(width + 25, height / 2, 50, height * 2, wallOptions);
+    engineRef.current = physicsWorld.engine;
+    renderRef.current = physicsWorld.render;
+    runnerRef.current = physicsWorld.runner;
 
+    const engine = physicsWorld.engine;
+    const render = physicsWorld.render;
+    const world = physicsWorld.world;
+
+    // Calculate constants for rendering
     const bucketCount = POINT_DISTRIBUTION.length;
-    const bucketWidth = width / bucketCount;
-    const separatorHeight = 100;
+    const bucketWidth = LOGICAL_WIDTH / bucketCount;
+    const height = LOGICAL_HEIGHT;
     const sensorHeight = 40;
 
-    const separators: Matter.Body[] = [];
-    const sensors: Matter.Body[] = [];
-
-    POINT_DISTRIBUTION.forEach((points, i) => {
-        const x = i * bucketWidth + (bucketWidth / 2);
-        
-        if (i < bucketCount - 1) {
-            const sepX = (i + 1) * bucketWidth;
-            separators.push(Bodies.rectangle(sepX, height - separatorHeight / 2, 4, separatorHeight, {
-                isStatic: true,
-                render: { fillStyle: COLORS.accent },
-                collisionFilter: { category: CATEGORY_WALL },
-                friction: 0,
-                restitution: 0.2
-            }));
-        }
-
-        const sensor = Bodies.rectangle(x, height - sensorHeight/2, bucketWidth - 8, sensorHeight, {
-            isStatic: true,
-            isSensor: true,
-            label: `sensor-${points}`,
-            render: { 
-                fillStyle: COLORS.buckets[Math.min(Math.abs(3 - i), COLORS.buckets.length - 1)],
-                opacity: 0.3
-            },
-            collisionFilter: { category: CATEGORY_SENSOR }
-        });
-        sensors.push(sensor);
-    });
-
-    // Plinko Pegs
-    const pegs: Matter.Body[] = [];
-    const rows = 10;
-    const startY = 80;
-    const endY = height - separatorHeight - 30; 
-    const spacingY = (endY - startY) / (rows - 1);
-    const gridCols = bucketCount + 1; 
-    const spacingX = width / gridCols;
-
-    for (let row = 0; row < rows; row++) {
-        const y = startY + row * spacingY;
-        const isStaggered = row % 2 === 1;
-
-        if (isStaggered) {
-             for (let col = 1; col < gridCols; col++) {
-                 const x = col * spacingX;
-                 pegs.push(Bodies.circle(x, y, 7.5, {
-                    isStatic: true,
-                    render: { fillStyle: COLORS.peg },
-                    restitution: 0.5,
-                    friction: 0,
-                    collisionFilter: { category: CATEGORY_PEG }
-                }));
-             }
-        } else {
-             for (let col = 0; col < gridCols; col++) {
-                 const x = (col + 0.5) * spacingX;
-                 if (x > 10 && x < width - 10) {
-                    pegs.push(Bodies.circle(x, y, 7.5, {
-                        isStatic: true,
-                        render: { fillStyle: COLORS.peg },
-                        restitution: 0.5,
-                        friction: 0,
-                        collisionFilter: { category: CATEGORY_PEG }
-                    }));
-                 }
-             }
-        }
-    }
-
-    Composite.add(engine.world, [ground, leftWall, rightWall, ...separators, ...sensors, ...pegs]);
+    // Track balls for boundary detection
+    const ballBounceStates = new Map<string, ReturnType<typeof createBounceDetectionState>>();
+    const ballBoundaryBounds = createBoundaryBoundsMatter(LOGICAL_WIDTH, LOGICAL_HEIGHT, 12.5, 100);
 
     // 4. Custom Render Loop
     Events.on(render, 'afterRender', () => {
@@ -300,11 +197,46 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
         });
 
         ctx.font = 'bold 12px "Roboto Mono", monospace';
-        const bodies = Composite.allBodies(engine.world);
+        const bodies = Composite.allBodies(world);
+        const now = Date.now();
+        
         bodies.forEach(body => {
             if (body.label.startsWith('ball-')) {
-                const playerId = body.label.split('ball-')[1]; // Label: ball-{playerId}
+                const playerId = body.label.split('ball-')[1];
                 const player = playersRef.current.find(p => p.id === playerId);
+                
+                // Boundary escape detection
+                const ballPosition = { x: body.position.x, y: body.position.y, z: 0 };
+                const escaped = detectBoundaryEscape(ballPosition, 12.5, ballBoundaryBounds);
+                
+                if (escaped) {
+                    console.log('[GameCanvas] Ball escaped play area! Scoring 0 points:', {
+                        ballId: body.label,
+                        ballPosition: { x: body.position.x.toFixed(2), y: body.position.y.toFixed(2) },
+                        bounds: ballBoundaryBounds
+                    });
+                    
+                    // Score with 0 points if this is the player's ball
+                    if (playerId === myIdRef.current) {
+                        callbacksRef.current.onScoreUpdate(playerId, 0);
+                    }
+                    
+                    playScore(0);
+                    World.remove(world, body);
+                    ballBounceStates.delete(body.label);
+                    return;
+                }
+                
+                // Enhanced bounce detection using collision detection module
+                if (!ballBounceStates.has(body.label)) {
+                    ballBounceStates.set(body.label, createBounceDetectionState());
+                }
+                const bounceState = ballBounceStates.get(body.label)!;
+                const velocity = { x: body.velocity.x, y: body.velocity.y, z: 0 };
+                const bounced = detectBounce(velocity, bounceState, now);
+                // Note: Bounce sound is handled in collision events, but we can enhance it here if needed
+                
+                // Render player name
                 if (player) {
                     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                     const text = player.name;
@@ -319,7 +251,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
             }
         });
 
-        const now = Date.now();
         setLasers(prev => prev.filter(l => now - l.createdAt < 200));
         
         const currentLasers = lasersRef.current.filter(l => now - l.createdAt < 200);
@@ -370,7 +301,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
                      // Ideally server confirms removal, but for responsiveness we remove visually on trigger.
                      // A more robust way is waiting for score update from server to remove, but that might look laggy.
                      // We'll remove locally.
-                     World.remove(engine.world, ball);
+                     World.remove(world, ball);
                      playScore(points);
                 } 
                 else {
@@ -383,72 +314,40 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
     });
 
     Render.run(render);
-    const runner = Runner.create();
-    runnerRef.current = runner;
-    Runner.run(runner, engine);
+    Runner.run(runnerRef.current, engine);
 
     return () => {
         Render.stop(render);
-        Runner.stop(runner);
-        World.clear(engine.world, false);
+        Runner.stop(runnerRef.current);
+        World.clear(world, false);
         Engine.clear(engine);
         if (render.canvas) render.canvas.remove();
         engineRef.current = null;
         renderRef.current = null;
+        runnerRef.current = null;
     };
   }, []); 
 
   // --- Physics Helper ---
   const spawnPhysicsBall = (player: Player, x: number) => {
       if (!engineRef.current) return;
-      
-      const isCheater = player.isCheater;
-      const width = LOGICAL_WIDTH;
-      const dropX = isCheater ? width / 2 : x;
-      // Generate a semi-unique label (ball-PLAYERID)
-      // Ideally we'd use a UUID from the server for the ball itself.
-      // For this MVP, we assume one ball per player active.
-      // Or we can append a random string.
-      const ballLabel = `ball-${player.id}`;
-
-      const ball = Matter.Bodies.circle(dropX, -30, 12.5, {
-          label: ballLabel,
-          restitution: 0.5,
-          friction: 0.001,
-          frictionAir: 0.015,
-          render: { 
-              fillStyle: player.color,
-              strokeStyle: '#fff',
-              lineWidth: 2
-          },
-          collisionFilter: {
-              category: CATEGORY_BALL,
-              mask: isCheater 
-                  ? CATEGORY_WALL | CATEGORY_SENSOR | CATEGORY_BALL 
-                  : CATEGORY_PEG | CATEGORY_WALL | CATEGORY_SENSOR | CATEGORY_BALL
-          }
-      });
-
-      // Add a custom ID property to the body if needed for exact targeting
-      ball.id = parseInt(player.id.substring(0, 5), 16) || Matter.Common.nextId(); 
-      // ^ Hacky for spectator targeting, ideally we use string IDs but Matter uses Int IDs.
-      // Let's rely on label matching for spectator logic.
-
-      Matter.Composite.add(engineRef.current.world, ball);
+      spawnBall({ player, x, engine: engineRef.current });
   };
 
   // --- Input ---
-  const handleMouseMove = (e: React.MouseEvent) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const relativeX = e.clientX - rect.left;
-      const relativeY = e.clientY - rect.top;
-      const logicalX = relativeX * (LOGICAL_WIDTH / rect.width);
-      const logicalY = relativeY * (LOGICAL_HEIGHT / rect.height);
-      setMousePos({ x: logicalX, y: logicalY });
-  };
+  const handleMouseMove = createMouseMoveHandler({
+    containerRef,
+    wrapperRef,
+    scale,
+    onPositionUpdate: setMousePos
+  });
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = createClickHandler({
+    containerRef,
+    wrapperRef,
+    scale,
+    onPositionUpdate: setMousePos,
+    onAction: (pos) => {
       resumeAudio();
 
       if (isPlayer && !hasFinished) {
@@ -458,20 +357,24 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
           }
           
           // Drop Ball
-          const padding = 20;
-          const clampedX = Math.max(padding, Math.min(LOGICAL_WIDTH - padding, mousePos.x));
           if (socketRef.current) {
-              socketRef.current.emit('drop_ball', { x: clampedX });
+              socketRef.current.emit('drop_ball', { x: pos.x });
               // Mark that we've dropped our ball
               setHasDroppedBall(true);
               // Note: We do NOT spawn locally immediately. We wait for server echo.
               // This ensures everyone spawns at roughly same time.
           }
       } else if (isSpectator) {
-          // Blast
-          handleSpectatorBlast(e);
+          // Blast - use original mouse event for confetti positioning
+          const syntheticEvent = {
+            clientX: 0,
+            clientY: 0,
+            preventDefault: () => {}
+          } as React.MouseEvent;
+          handleSpectatorBlast(syntheticEvent);
       }
-  };
+    }
+  }, 20);
 
   const handleSpectatorBlast = (e: React.MouseEvent) => {
       if (!engineRef.current || !myPlayer || !socketRef.current) return;
@@ -527,23 +430,84 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
   // Show reticle only if player hasn't dropped their ball yet or is spectator
   const showReticle = (isPlayer && !hasFinished && !hasDroppedBall) || isSpectator;
 
+  // Touch event handlers for mobile
+  const handleTouchMove = createTouchMoveHandler({
+    containerRef,
+    wrapperRef,
+    scale,
+    onPositionUpdate: setMousePos
+  });
+
+  const handleTouchEnd = createTouchEndHandler({
+    containerRef,
+    wrapperRef,
+    scale,
+    onPositionUpdate: setMousePos,
+    onAction: (pos) => {
+      resumeAudio();
+      if (isPlayer && !hasFinished && !hasDroppedBall) {
+        if (socketRef.current) {
+          socketRef.current.emit('drop_ball', { x: pos.x });
+          setHasDroppedBall(true);
+        }
+      } else if (isSpectator) {
+        handleSpectatorBlast({
+          clientX: 0,
+          clientY: 0,
+          preventDefault: () => {}
+        } as React.MouseEvent);
+      }
+    }
+  });
+
+  const handlePointerDown = createPointerDownHandler({
+    containerRef,
+    wrapperRef,
+    scale,
+    onPositionUpdate: setMousePos,
+    onAction: (pos) => {
+      resumeAudio();
+      if (isPlayer && !hasFinished && !hasDroppedBall) {
+        if (socketRef.current) {
+          socketRef.current.emit('drop_ball', { x: pos.x });
+          setHasDroppedBall(true);
+        }
+      } else if (isSpectator) {
+        handleSpectatorBlast({
+          clientX: 0,
+          clientY: 0,
+          preventDefault: () => {}
+        } as React.MouseEvent);
+      }
+    }
+  });
+
   return (
     <div 
         ref={wrapperRef} 
-        className="w-full h-full flex items-center justify-center relative select-none"
+        className="w-full h-full flex items-center justify-center relative select-none touch-none"
+        style={{ touchAction: 'none' }}
     >
         <div 
             ref={containerRef} 
             onMouseMove={handleMouseMove}
             onClick={handleClick}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onPointerDown={handlePointerDown}
             style={{ 
                 width: LOGICAL_WIDTH, 
                 height: LOGICAL_HEIGHT,
                 transform: `scale(${scale})`,
                 transformOrigin: 'center center',
-                cursor: 'none' 
+                cursor: 'none',
+                borderLeft: `${4 / scale}px solid #d946ef`,
+                borderRight: `${4 / scale}px solid #d946ef`,
+                borderBottom: `${4 / scale}px solid #d946ef`,
+                borderRadius: `0 0 ${12 / scale}px ${12 / scale}px`,
+                boxShadow: `0 0 ${30 / scale}px rgba(255, 0, 255, 0.2)`
             }}
-            className="relative border-x-4 border-b-4 border-fuchsia-600 rounded-b-xl bg-slate-900/50 backdrop-blur-sm shadow-[0_0_30px_rgba(255,0,255,0.2)] overflow-hidden"
+            className="relative bg-slate-900/50 backdrop-blur-sm overflow-hidden"
         >
             {showReticle && (
                 <div 

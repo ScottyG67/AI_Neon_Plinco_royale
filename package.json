@@ -7,13 +7,17 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "build": "vite build"
+    "build": "vite build",
+    "generate-proto": "node scripts/generate-proto.js",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.2",
     "express": "^4.18.2",
     "lucide-react": "^0.344.0",
     "matter-js": "^0.19.0",
+    "protobufjs": "^7.2.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "socket.io": "^4.7.4",
@@ -21,7 +25,9 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.1",
-    "vite": "^5.1.4"
+    "vite": "^5.1.4",
+    "vitest": "^1.0.4",
+    "jsdom": "^23.0.1"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -160,3 +160,9 @@ This creates a `dist/` directory with optimized static files. The Dockerfile aut
 - `npm start` - Start production server (requires built `dist/` folder)
 - `npm run build` - Build frontend for production
 - `./deploy.sh` - Deploy to Google Cloud Run
+
+## Credits
+
+### Advanced Volume Controls
+
+The advanced volume slider controls (available in Settings > Advanced Mode) are inspired by the [WorstVolumeControl](https://github.com/ZeyuKeithFu/WorstVolumeControl) project by [ZeyuKeithFu](https://github.com/ZeyuKeithFu). The physics-based rotation control and "worst UX" design concept come from this excellent repository.

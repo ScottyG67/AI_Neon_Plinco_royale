@@ -3,10 +3,71 @@ import { Player, GamePhase } from './types';
 import { Button } from './components/Button';
 import { GameCanvas } from './components/GameCanvas';
 import { WinnerToast } from './components/WinnerToast';
+import { PlayersPanel } from './components/PlayersPanel';
 import { COLORS, CHEAT_NAME } from './constants';
-import { Users, UserPlus, Play, RotateCcw, Bot, Eye, Music, Music2, Wifi, WifiOff, Settings, X } from 'lucide-react';
+import { Users, UserPlus, Play, RotateCcw, Bot, Eye, Music, Music2, Wifi, WifiOff, Settings, X, Info, Github, Zap } from 'lucide-react';
+import { VolumeSlider } from './components/VolumeSlider';
+import { VolumeLauncer } from './components/VolumeLauncer';
 import { resumeAudio, toggleMusic, getMusicState, setMusicVolume, setSfxVolume } from './audio';
 import { io, Socket } from 'socket.io-client';
+
+// Create socket singleton outside component to prevent re-creation in StrictMode
+// Store in window to survive hot module reloads
+declare global {
+    interface Window {
+        __plinkoSocket?: Socket;
+        __plinkoListenersAttached?: boolean;
+    }
+}
+
+const getSocket = (): Socket => {
+    // Check window first (survives HMR)
+    if (window.__plinkoSocket && window.__plinkoSocket.connected) {
+        console.log(`[App] Reusing window socket. ID: ${window.__plinkoSocket.id}`);
+        return window.__plinkoSocket;
+    }
+    
+    // Check module-level (for first load)
+    if (!window.__plinkoSocket) {
+        console.log('[App] Creating new socket connection...');
+        window.__plinkoSocket = io({
+            reconnectionAttempts: 20,
+            reconnectionDelay: 2000,
+            timeout: 20000,
+            transports: ['polling', 'websocket'],
+            autoConnect: true,
+            // Prevent automatic reconnection on manual disconnect
+            reconnection: true
+        });
+        window.__plinkoListenersAttached = false;
+        
+        // Log socket lifecycle for debugging
+        window.__plinkoSocket.on('connect', () => {
+            console.log(`[App] ✅ Socket connected with ID: ${window.__plinkoSocket?.id}`);
+        });
+        
+        window.__plinkoSocket.on('disconnect', (reason) => {
+            console.log(`[App] ❌ Socket disconnected. Reason: ${reason}`);
+        });
+        
+        window.__plinkoSocket.on('reconnect_attempt', (attemptNumber) => {
+            console.log(`[App] 🔄 Reconnection attempt #${attemptNumber}`);
+        });
+        
+        window.__plinkoSocket.on('reconnect', (attemptNumber) => {
+            console.log(`[App] ✅ Reconnected after ${attemptNumber} attempts`);
+        });
+    } else {
+        console.log(`[App] Socket exists but not connected. ID: ${window.__plinkoSocket.id}, State: ${window.__plinkoSocket.connected ? 'connected' : 'disconnected'}`);
+        // If socket exists but is disconnected, try to reconnect
+        if (!window.__plinkoSocket.connected && !window.__plinkoSocket.connecting) {
+            console.log('[App] Attempting to reconnect existing socket...');
+            window.__plinkoSocket.connect();
+        }
+    }
+    
+    return window.__plinkoSocket;
+};
 
 const App = () => {
   const [phase, setPhase] = useState<GamePhase>(GamePhase.LOBBY);
@@ -17,53 +78,120 @@ const App = () => {
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+  const [advancedMode, setAdvancedMode] = useState(false);
   const [musicVol, setMusicVolState] = useState(0.4);
   const [sfxVol, setSfxVolState] = useState(0.6);
   
   // Socket Ref
   const socketRef = useRef<Socket | null>(null);
+  // Track if we're mounted to handle StrictMode properly
+  const isMountedRef = useRef(true);
+  // Store event handlers in refs so we can properly remove them
+  const handlersRef = useRef<{
+    connect?: () => void;
+    connectError?: (err: Error) => void;
+    disconnect?: (reason: string) => void;
+    stateUpdate?: (data: { players: Player[], phase: GamePhase }) => void;
+    errorMessage?: (msg: string) => void;
+  }>({});
   // Current Player ID (My ID)
   const [myId, setMyId] = useState<string | null>(null);
 
   useEffect(() => {
-      // Connect to the server
-      const socket = io({
-          reconnectionAttempts: 20,
-          reconnectionDelay: 2000,
-          timeout: 20000,
-          transports: ['polling', 'websocket'] // Attempt polling first, then upgrade
-          // path defaults to '/socket.io' which matches the server
-      });
+      isMountedRef.current = true;
+      
+      // Get singleton socket
+      const socket = getSocket();
       socketRef.current = socket;
-
-      socket.on('connect', () => {
-          console.log('Connected to server with ID:', socket.id);
+      
+      console.log('[App] Setting up socket listeners. Connected:', socket.connected);
+      
+      // Ensure socket is connected
+      console.log(`[App] Socket state - Connected: ${socket.connected}, Connecting: ${socket.connecting}, ID: ${socket.id}`);
+      if (!socket.connected && !socket.connecting) {
+          console.log('[App] Socket not connected, attempting to connect...');
+          socket.connect();
+      } else if (socket.connected) {
+          console.log(`[App] Socket already connected with ID: ${socket.id}`);
+          // Update state if already connected
           setIsConnected(true);
           setMyId(socket.id || null);
-          setError('');
-      });
+      }
 
-      socket.on('connect_error', (err) => {
-          console.error('Socket connection error:', err);
-          setIsConnected(false);
-      });
+      // Only attach listeners once to the global socket
+      if (!window.__plinkoListenersAttached) {
+          console.log('[App] Attaching socket event listeners...');
+          
+          // Create handlers and store in ref
+          handlersRef.current.connect = () => {
+              if (!isMountedRef.current) return;
+              console.log('[App] Connected to server with ID:', socket.id);
+              setIsConnected(true);
+              setMyId(socket.id || null);
+              setError('');
+          };
 
-      socket.on('disconnect', () => {
-          console.log('Disconnected from server');
-          setIsConnected(false);
-      });
+          handlersRef.current.connectError = (err: Error) => {
+              if (!isMountedRef.current) return;
+              console.error('[App] Socket connection error:', err);
+              setIsConnected(false);
+          };
 
-      socket.on('state_update', (data: { players: Player[], phase: GamePhase }) => {
-          setPlayers(data.players);
-          setPhase(data.phase);
-      });
+          handlersRef.current.disconnect = (reason: string) => {
+              if (!isMountedRef.current) return;
+              console.log('[App] Disconnected from server. Reason:', reason);
+              setIsConnected(false);
+              
+              // Only log if it's not a normal client disconnect
+              if (reason !== 'io client disconnect') {
+                  console.log('[App] Unexpected disconnect, will attempt to reconnect');
+              }
+          };
 
-      socket.on('error_message', (msg: string) => {
-          setError(msg);
-      });
+          handlersRef.current.stateUpdate = (data: { players: Player[], phase: GamePhase }) => {
+              if (!isMountedRef.current) return;
+              setPlayers(data.players);
+              setPhase(data.phase);
+          };
+
+          handlersRef.current.errorMessage = (msg: string) => {
+              if (!isMountedRef.current) return;
+              setError(msg);
+          };
+          
+          // Add listeners once
+          socket.on('connect', handlersRef.current.connect!);
+          socket.on('connect_error', handlersRef.current.connectError!);
+          socket.on('disconnect', handlersRef.current.disconnect!);
+          socket.on('state_update', handlersRef.current.stateUpdate!);
+          socket.on('error_message', handlersRef.current.errorMessage!);
+          
+          window.__plinkoListenersAttached = true;
+      } else {
+          console.log('[App] Socket listeners already attached, skipping...');
+      }
+
+      // Cleanup on page unload
+      const handleBeforeUnload = () => {
+          console.log('[App] Page unloading, cleaning up socket...');
+          if (window.__plinkoSocket) {
+              window.__plinkoSocket.removeAllListeners();
+              window.__plinkoSocket.disconnect();
+              window.__plinkoSocket = undefined;
+              window.__plinkoListenersAttached = false;
+          }
+          socketRef.current = null;
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
 
       return () => {
-          socket.disconnect();
+          isMountedRef.current = false;
+          window.removeEventListener('beforeunload', handleBeforeUnload);
+          
+          // Don't remove listeners or disconnect here - React StrictMode will remount immediately
+          // The socket and listeners will be reused on remount
+          // Cleanup only happens on actual page unload
       };
   }, []);
 
@@ -173,11 +301,11 @@ const App = () => {
   }, [myId, players]);
 
   return (
-    <div className="h-screen bg-slate-950 text-white flex flex-col items-center p-4 scanlines relative selection:bg-fuchsia-500 selection:text-white overflow-hidden">
+    <div className="h-screen w-screen bg-slate-950 text-white flex flex-col items-center p-2 md:p-4 scanlines relative selection:bg-fuchsia-500 selection:text-white overflow-hidden">
       
       {/* Header */}
-      <header className="w-full max-w-6xl flex justify-between items-center mb-4 z-10 shrink-0 relative">
-        <h1 className="text-2xl md:text-4xl font-display font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 via-purple-500 to-cyan-500 drop-shadow-[0_0_10px_rgba(255,0,255,0.5)]">
+      <header className="w-full max-w-6xl flex justify-between items-center mb-4 shrink-0 relative" style={{ zIndex: 9998, position: 'relative' }}>
+        <h1 className="text-xl sm:text-2xl md:text-4xl font-display font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 via-purple-500 to-cyan-500 drop-shadow-[0_0_10px_rgba(255,0,255,0.5)]">
           NEON PLINKO
         </h1>
         <div className="flex items-center gap-2">
@@ -195,6 +323,14 @@ const App = () => {
             </button>
 
             <button 
+                onClick={() => setShowAbout(!showAbout)}
+                className={`p-2 rounded-full border transition-all ${showAbout ? 'bg-cyan-500/20 border-cyan-400 text-cyan-400' : 'bg-transparent border-slate-600 text-slate-500 hover:text-white hover:border-white'}`}
+                title="About"
+            >
+                <Info className="w-5 h-5" />
+            </button>
+
+            <button 
                 onClick={() => setShowSettings(!showSettings)}
                 className={`p-2 rounded-full border transition-all ${showSettings ? 'bg-slate-700 border-white text-white' : 'bg-transparent border-slate-600 text-slate-500 hover:text-white hover:border-white'}`}
                 title="Sound Settings"
@@ -209,156 +345,201 @@ const App = () => {
             )}
         </div>
 
-        {/* Settings Popover */}
-        {showSettings && (
-            <div className="absolute top-14 right-0 z-[100] bg-slate-900 border-2 border-slate-700 rounded-xl p-4 w-64 shadow-[0_0_20px_rgba(0,0,0,0.8)] backdrop-blur-xl animate-fade-in" style={{ pointerEvents: 'auto' }}>
+        {/* About Popover */}
+        {showAbout && (
+            <div className="absolute top-14 right-0 bg-slate-900 border-2 border-cyan-500/50 rounded-xl p-6 w-80 shadow-[0_0_20px_rgba(0,0,0,0.8)] backdrop-blur-xl animate-fade-in" style={{ pointerEvents: 'auto', position: 'absolute', zIndex: 9999 }}>
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-display text-sm text-cyan-400 uppercase tracking-widest">Audio Settings</h3>
-                    <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-white">
+                    <h3 className="font-display text-lg text-cyan-400 uppercase tracking-widest">About</h3>
+                    <button onClick={() => setShowAbout(false)} className="text-slate-400 hover:text-white" style={{ pointerEvents: 'auto', cursor: 'pointer' }}>
                         <X className="w-4 h-4" />
                     </button>
                 </div>
                 
-                <div className="space-y-4">
-                    <div className="space-y-1">
-                        <div className="flex justify-between text-xs text-slate-300">
-                            <span>Music</span>
-                            <span>{Math.round(musicVol * 100)}%</span>
-                        </div>
-                        <input 
-                            type="range" 
-                            min="0" 
-                            max="1" 
-                            step="0.01" 
-                            value={musicVol}
-                            onChange={handleMusicVolChange}
-                            onInput={handleMusicVolChange}
-                            className="w-full accent-fuchsia-500 relative z-10"
-                            style={{ pointerEvents: 'auto', position: 'relative' }}
-                        />
+                <div className="space-y-4 text-sm text-slate-300" style={{ pointerEvents: 'auto' }}>
+                    <p className="leading-relaxed">
+                        A simple multiplayer Plinko game coded using <a href="https://cursor.sh" target="_blank" rel="noopener noreferrer" onClick={(e) => { e.stopPropagation(); window.open('https://cursor.sh', '_blank', 'noopener,noreferrer'); }} className="text-cyan-400 font-semibold hover:text-cyan-300 underline transition-colors" style={{ pointerEvents: 'auto', cursor: 'pointer', position: 'relative', zIndex: 101 }}>Cursor</a> and <a href="https://ai.google.dev/studio" target="_blank" rel="noopener noreferrer" onClick={(e) => { e.stopPropagation(); window.open('https://ai.google.dev/studio', '_blank', 'noopener,noreferrer'); }} className="text-cyan-400 font-semibold hover:text-cyan-300 underline transition-colors" style={{ pointerEvents: 'auto', cursor: 'pointer', position: 'relative', zIndex: 101 }}>Google AI Studio</a>.
+                    </p>
+                    
+                    <div className="pt-2 border-t border-slate-700">
+                        <a 
+                            href="https://github.com/ScottyG67/AI_Neon_Plinco_royale" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                window.open('https://github.com/ScottyG67/AI_Neon_Plinco_royale', '_blank', 'noopener,noreferrer');
+                            }}
+                            className="flex items-center gap-2 text-cyan-400 hover:text-cyan-300 transition-colors"
+                            style={{ pointerEvents: 'auto', cursor: 'pointer', position: 'relative', zIndex: 101 }}
+                        >
+                            <Github className="w-4 h-4" />
+                            <span>View on GitHub</span>
+                        </a>
                     </div>
                     
-                    <div className="space-y-1">
-                        <div className="flex justify-between text-xs text-slate-300">
-                            <span>SFX</span>
-                            <span>{Math.round(sfxVol * 100)}%</span>
-                        </div>
-                        <input 
-                            type="range" 
-                            min="0" 
-                            max="1" 
-                            step="0.01" 
-                            value={sfxVol}
-                            onChange={handleSfxVolChange}
-                            onInput={handleSfxVolChange}
-                            className="w-full accent-cyan-500 relative z-10"
-                            style={{ pointerEvents: 'auto', position: 'relative' }}
-                        />
+                    <div className="pt-2 border-t border-slate-700">
+                        <p className="text-xs text-slate-400">
+                            Created by <span className="text-cyan-400 font-semibold">Scott Gloyna</span>
+                        </p>
                     </div>
+                    
+                    <div className="pt-2 border-t border-slate-700">
+                        <p className="text-xs text-slate-400 mb-2">Credits:</p>
+                        <p className="text-[10px] text-slate-500 leading-relaxed">
+                            Advanced volume controls inspired by{' '}
+                            <a 
+                                href="https://github.com/ZeyuKeithFu/WorstVolumeControl" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    window.open('https://github.com/ZeyuKeithFu/WorstVolumeControl', '_blank', 'noopener,noreferrer');
+                                }}
+                                className="text-cyan-400 hover:text-cyan-300 underline"
+                                style={{ pointerEvents: 'auto', cursor: 'pointer', position: 'relative', zIndex: 101 }}
+                            >
+                                WorstVolumeControl
+                            </a>
+                            {' '}by ZeyuKeithFu
+                        </p>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Settings Popover */}
+        {showSettings && (
+            <div className="absolute top-14 right-0 bg-slate-900 border-2 border-slate-700 rounded-xl p-4 w-64 shadow-[0_0_20px_rgba(0,0,0,0.8)] backdrop-blur-xl animate-fade-in" style={{ pointerEvents: 'auto', position: 'absolute', zIndex: 9999 }}>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-display text-sm text-cyan-400 uppercase tracking-widest">Audio Settings</h3>
+                    <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-white" style={{ pointerEvents: 'auto', cursor: 'pointer' }}>
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+                
+                <div className="space-y-4" style={{ pointerEvents: 'auto' }}>
+                    {/* Advanced Mode Toggle */}
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-700" style={{ pointerEvents: 'auto' }}>
+                        <div className="flex items-center gap-2">
+                            <Zap className="w-3 h-3 text-yellow-400" />
+                            <span className="text-xs text-slate-300">Advanced Mode</span>
+                        </div>
+                        <button
+                            onClick={() => setAdvancedMode(!advancedMode)}
+                            className={`relative w-10 h-5 rounded-full transition-colors ${advancedMode ? 'bg-yellow-500' : 'bg-slate-600'}`}
+                            style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                        >
+                            <div 
+                                className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${advancedMode ? 'translate-x-5' : ''}`}
+                            />
+                        </button>
+                    </div>
+
+                    {advancedMode ? (
+                        <>
+                            {/* Advanced Volume Sliders */}
+                            <VolumeSlider
+                                value={musicVol}
+                                onChange={(val) => {
+                                    setMusicVolState(val);
+                                    setMusicVolume(val);
+                                }}
+                                label="Music"
+                                color="#ec4899"
+                            />
+                            <VolumeLauncer
+                                value={sfxVol}
+                                onChange={(val) => {
+                                    setSfxVolState(val);
+                                    setSfxVolume(val);
+                                }}
+                                label="SFX"
+                                color="#06b6d4"
+                            />
+                            
+                            {/* Credits for advanced volume controls */}
+                            <div className="pt-2 border-t border-slate-700">
+                                <p className="text-[8px] text-slate-500 italic text-center">
+                                    Advanced volume controls inspired by{' '}
+                                    <a 
+                                        href="https://github.com/ZeyuKeithFu/WorstVolumeControl" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            window.open('https://github.com/ZeyuKeithFu/WorstVolumeControl', '_blank', 'noopener,noreferrer');
+                                        }}
+                                        className="text-cyan-400 hover:text-cyan-300 underline"
+                                        style={{ pointerEvents: 'auto', cursor: 'pointer', position: 'relative', zIndex: 101 }}
+                                    >
+                                        WorstVolumeControl
+                                    </a>
+                                </p>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            {/* Standard Volume Sliders */}
+                            <div className="space-y-1" style={{ pointerEvents: 'auto' }}>
+                                <div className="flex justify-between text-xs text-slate-300">
+                                    <span>Music</span>
+                                    <span>{Math.round(musicVol * 100)}%</span>
+                                </div>
+                                <input 
+                                    type="range" 
+                                    min="0" 
+                                    max="1" 
+                                    step="0.01" 
+                                    value={musicVol}
+                                    onChange={handleMusicVolChange}
+                                    onInput={handleMusicVolChange}
+                                    className="w-full accent-fuchsia-500"
+                                    style={{ pointerEvents: 'auto', position: 'relative', zIndex: 10000, cursor: 'pointer' }}
+                                />
+                            </div>
+                            
+                            <div className="space-y-1" style={{ pointerEvents: 'auto' }}>
+                                <div className="flex justify-between text-xs text-slate-300">
+                                    <span>SFX</span>
+                                    <span>{Math.round(sfxVol * 100)}%</span>
+                                </div>
+                                <input 
+                                    type="range" 
+                                    min="0" 
+                                    max="1" 
+                                    step="0.01" 
+                                    value={sfxVol}
+                                    onChange={handleSfxVolChange}
+                                    onInput={handleSfxVolChange}
+                                    className="w-full accent-cyan-500"
+                                    style={{ pointerEvents: 'auto', position: 'relative', zIndex: 10000, cursor: 'pointer' }}
+                                />
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
         )}
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-6xl flex flex-col md:flex-row gap-6 z-10 min-h-0">
+      <main className="flex-1 w-full max-w-6xl flex flex-col md:flex-row gap-2 md:gap-6 z-10 min-h-0">
         
-        {/* Left Panel: Scoreboard / Lobby List */}
-        <aside className="w-full md:w-1/3 bg-slate-900/80 border border-purple-500/30 rounded-xl p-6 backdrop-blur-md shadow-[0_0_20px_rgba(157,0,255,0.2)] flex flex-col h-full max-h-full overflow-hidden">
-          <div className="flex items-center gap-2 mb-4 border-b border-purple-500/30 pb-2 shrink-0">
-            <Users className="text-cyan-400" />
-            <h2 className="text-xl font-display text-cyan-400 uppercase tracking-widest">Players ({players.length})</h2>
-          </div>
-
-          <div className="space-y-3 overflow-y-auto pr-2 flex-1 scrollbar-thin scrollbar-thumb-purple-500 scrollbar-track-transparent">
-            {players.length === 0 && (
-                <div className="text-slate-500 italic text-center py-4">Waiting for players...</div>
-            )}
-            {players.map(player => (
-              <div 
-                key={player.id} 
-                className={`flex items-center justify-between bg-slate-800/50 p-3 rounded-lg border transition-colors ${player.id === myId ? 'border-cyan-400 bg-slate-800' : 'border-slate-700'} ${player.isSpectator ? 'opacity-70 border-dashed' : ''}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div 
-                    className="w-4 h-4 rounded-full shadow-[0_0_8px_currentColor]" 
-                    style={{ backgroundColor: player.color, color: player.color }} 
-                  />
-                  <div className="flex flex-col">
-                    <span className="font-bold tracking-wide leading-none flex items-center gap-2">
-                        {player.name}
-                        {player.id === myId && <span className="text-[10px] text-cyan-400 bg-cyan-950 px-1 rounded">(YOU)</span>}
-                        {player.isSpectator && <Eye className="w-3 h-3 text-slate-400" />}
-                    </span>
-                    <span className="text-[10px] text-slate-400 uppercase">
-                        {player.isBot ? 'Bot' : player.isSpectator ? 'Spectator' : 'Player'}
-                    </span>
-                  </div>
-                </div>
-                {!player.isSpectator && (
-                    <div className="font-display text-xl text-fuchsia-400">
-                    {player.score !== null ? player.score : '-'}
-                    </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {phase === GamePhase.LOBBY && !amIJoined && (
-            <div className="mt-4 pt-4 border-t border-purple-500/30 space-y-4 shrink-0">
-              <form onSubmit={handleAddPlayer} className="flex flex-col gap-3">
-                <div className="relative">
-                  <input
-                    type="text"
-                    maxLength={15}
-                    value={newPlayerName}
-                    onChange={(e) => setNewPlayerName(e.target.value)}
-                    placeholder="Enter Name"
-                    className="w-full bg-slate-950 border-2 border-slate-700 rounded-lg p-3 text-white focus:border-cyan-400 focus:outline-none focus:shadow-[0_0_10px_rgba(0,255,255,0.4)] transition-all font-mono placeholder:text-slate-600"
-                  />
-                  <UserPlus className="absolute right-3 top-3.5 text-slate-500 w-5 h-5" />
-                </div>
-                
-                <div className="flex items-center gap-2 px-1">
-                    <input 
-                        type="checkbox" 
-                        id="spectator-check"
-                        checked={isSpectator}
-                        onChange={(e) => setIsSpectator(e.target.checked)}
-                        className="w-4 h-4 accent-fuchsia-500 bg-slate-900 border-slate-600 rounded cursor-pointer"
-                    />
-                    <label htmlFor="spectator-check" className="text-sm text-slate-300 cursor-pointer select-none">
-                        Join as Spectator
-                    </label>
-                </div>
-
-                {error && <p className="text-red-500 text-xs font-bold animate-pulse">{error}</p>}
-                
-                <Button 
-                    type="submit" 
-                    variant="secondary" 
-                    className="w-full py-2 text-sm"
-                    disabled={!newPlayerName.trim() || !isConnected}
-                >
-                    Join Lobby
-                </Button>
-              </form>
-            </div>
-          )}
-
-           {phase === GamePhase.LOBBY && amIJoined && (
-              <div className="mt-4 shrink-0">
-                <Button 
-                  onClick={handleStartGame} 
-                  disabled={players.filter(p => !p.isSpectator).length === 0} 
-                  className="w-full flex items-center justify-center gap-2"
-                >
-                  <Play className="w-5 h-5 fill-current" />
-                  Start Game
-                </Button>
-              </div>
-           )}
-        </aside>
+        {/* Left Panel: Scoreboard / Lobby List - Responsive with minimize */}
+        <PlayersPanel 
+          players={players}
+          myId={myId}
+          phase={phase}
+          amIJoined={amIJoined}
+          newPlayerName={newPlayerName}
+          setNewPlayerName={setNewPlayerName}
+          isSpectator={isSpectator}
+          setIsSpectator={setIsSpectator}
+          error={error}
+          isConnected={isConnected}
+          handleAddPlayer={handleAddPlayer}
+          handleStartGame={handleStartGame}
+        />
 
         {/* Right Panel: The Game */}
         <section className="flex-1 flex flex-col items-center justify-center relative overflow-hidden rounded-xl bg-slate-900/20 border border-purple-500/10">

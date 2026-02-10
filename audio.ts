@@ -1,5 +1,7 @@
 // Web Audio API Context Management
-const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+const getAudioContextClass = () => {
+  return (window.AudioContext || (window as any).webkitAudioContext);
+};
 let audioCtx: AudioContext | null = null;
 let musicMasterGain: GainNode | null = null;
 let sfxMasterGain: GainNode | null = null;
@@ -18,6 +20,7 @@ const SEQUENCE_LENGTH = 64; // 4 bars of 16th notes
 
 export const getAudioCtx = () => {
   if (!audioCtx) {
+    const AudioContextClass = getAudioContextClass();
     audioCtx = new AudioContextClass();
     
     // Create Master Channels
