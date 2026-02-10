@@ -43,8 +43,9 @@ gcloud services enable run.googleapis.com
 gcloud services enable containerregistry.googleapis.com
 
 # Build and push the Docker image
-echo "🐳 Building Docker image..."
-gcloud builds submit --tag ${IMAGE_NAME}
+# Using --no-cache to ensure fresh build with latest code changes
+echo "🐳 Building Docker image (no cache)..."
+gcloud builds submit --tag ${IMAGE_NAME} --no-cache
 
 # Deploy to Cloud Run
 echo "☁️  Deploying to Cloud Run..."

@@ -60,7 +60,7 @@ const getSocket = (): Socket => {
     } else {
         console.log(`[App] Socket exists but not connected. ID: ${window.__plinkoSocket.id}, State: ${window.__plinkoSocket.connected ? 'connected' : 'disconnected'}`);
         // If socket exists but is disconnected, try to reconnect
-        if (!window.__plinkoSocket.connected && !window.__plinkoSocket.connecting) {
+        if (!window.__plinkoSocket.connected) {
             console.log('[App] Attempting to reconnect existing socket...');
             window.__plinkoSocket.connect();
         }
@@ -108,11 +108,11 @@ const App = () => {
       console.log('[App] Setting up socket listeners. Connected:', socket.connected);
       
       // Ensure socket is connected
-      console.log(`[App] Socket state - Connected: ${socket.connected}, Connecting: ${socket.connecting}, ID: ${socket.id}`);
-      if (!socket.connected && !socket.connecting) {
+      console.log(`[App] Socket state - Connected: ${socket.connected}, ID: ${socket.id}`);
+      if (!socket.connected) {
           console.log('[App] Socket not connected, attempting to connect...');
           socket.connect();
-      } else if (socket.connected) {
+      } else {
           console.log(`[App] Socket already connected with ID: ${socket.id}`);
           // Update state if already connected
           setIsConnected(true);
