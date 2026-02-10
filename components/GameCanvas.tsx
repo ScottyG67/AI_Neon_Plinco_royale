@@ -254,7 +254,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
         if (isStaggered) {
              for (let col = 1; col < gridCols; col++) {
                  const x = col * spacingX;
-                 pegs.push(Bodies.circle(x, y, 5, {
+                 pegs.push(Bodies.circle(x, y, 7.5, {
                     isStatic: true,
                     render: { fillStyle: COLORS.peg },
                     restitution: 0.5,
@@ -266,7 +266,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
              for (let col = 0; col < gridCols; col++) {
                  const x = (col + 0.5) * spacingX;
                  if (x > 10 && x < width - 10) {
-                    pegs.push(Bodies.circle(x, y, 5, {
+                    pegs.push(Bodies.circle(x, y, 7.5, {
                         isStatic: true,
                         render: { fillStyle: COLORS.peg },
                         restitution: 0.5,
@@ -411,7 +411,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
       // Or we can append a random string.
       const ballLabel = `ball-${player.id}`;
 
-      const ball = Matter.Bodies.circle(dropX, -30, 10, {
+      const ball = Matter.Bodies.circle(dropX, -30, 12.5, {
           label: ballLabel,
           restitution: 0.5,
           friction: 0.001,
