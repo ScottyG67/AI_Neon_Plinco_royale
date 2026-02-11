@@ -30,7 +30,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1eAUcrZie2c-zFYhDH9UMbR
    npm run dev
    ```
    
-   The app will start in development mode with Vite hot-reloading. Open your browser to the URL shown in the terminal (typically `http://localhost:8080`).
+   The app will start in development mode with Vite hot-reloading. Open your browser to the URL shown in the terminal (typically `http://localhost:3001`).
 
 ## Deployment to Google Cloud Run
 
@@ -151,7 +151,7 @@ This creates a `dist/` directory with optimized static files. The Dockerfile aut
 
 ### Local Development Issues
 
-- **Port Already in Use**: Change the port in `vite.config.ts` or kill the process using port 8080
+- **Port Already in Use**: Change the port in `server.js` (default is 3001 for local dev) or kill the process using that port
 - **Socket Connection Fails**: Ensure the server is running and accessible
 
 ## Scripts

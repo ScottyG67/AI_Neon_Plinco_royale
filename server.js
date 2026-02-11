@@ -210,7 +210,7 @@ async function startServer() {
         });
     }
 
-    const PORT = process.env.PORT || 8080;
+    const PORT = process.env.PORT || (isDeployed ? 8080 : 3001);
     server.listen(PORT, () => {
         console.log(`[Server] ✅ Server running on port ${PORT}`);
     });
