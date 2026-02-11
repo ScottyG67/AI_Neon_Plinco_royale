@@ -76,10 +76,23 @@ const App = () => {
   const [isSpectator, setIsSpectator] = useState(false);
   const [error, setError] = useState('');
   const [musicPlaying, setMusicPlaying] = useState(false);
+  
+  // Start music by default when app loads
+  useEffect(() => {
+      // Check if music is already playing, if not, start it
+      if (!getMusicState()) {
+          const playing = toggleMusic();
+          setMusicPlaying(playing);
+      } else {
+          setMusicPlaying(true);
+      }
+      // Resume audio context (required for autoplay policies)
+      resumeAudio();
+  }, []);
   const [isConnected, setIsConnected] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
-  const [advancedMode, setAdvancedMode] = useState(false);
+  const [advancedMode, setAdvancedMode] = useState(true);
   const [musicVol, setMusicVolState] = useState(0.4);
   const [sfxVol, setSfxVolState] = useState(0.6);
   
