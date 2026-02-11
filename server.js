@@ -97,16 +97,31 @@ async function startServer() {
     }
     // Track bot drop timers to clear them if needed
     const botDropTimers = new Map();
+    // Track timeout timers for players who haven't scored (15 second limit)
+    const scoreTimeoutTimers = new Map();
     // Game constants
     const LOGICAL_WIDTH = 600;
     const PLAY_BOUNDS_PADDING = 20; // Padding from edges
+    const SCORE_TIMEOUT_MS = 15000; // 15 seconds
 
     // --- BOT LOGIC ---
     function scheduleBotDrops() {
-        // Get all bots that are not spectators
+        // Get all bots that are not spectators and haven't finished
         const bots = players.filter(p => p.isBot && !p.isSpectator && !p.finished);
         
         bots.forEach(bot => {
+            // Skip if bot already has a drop timer scheduled
+            if (botDropTimers.has(bot.id)) {
+                console.log(`[Bot] Skipping ${bot.name} - drop timer already scheduled`);
+                return;
+            }
+            
+            // Skip if bot has already dropped
+            if (droppedBalls.has(bot.id)) {
+                console.log(`[Bot] Skipping ${bot.name} - already dropped`);
+                return;
+            }
+            
             // Random drop time between 1-5 seconds (in milliseconds)
             const dropDelay = 1000 + Math.random() * 4000; // 1000ms to 5000ms
             
@@ -115,21 +130,58 @@ async function startServer() {
             const maxX = LOGICAL_WIDTH - PLAY_BOUNDS_PADDING;
             const randomX = minX + Math.random() * (maxX - minX);
             
+            console.log(`[Bot] Scheduling drop for ${bot.name} in ${dropDelay.toFixed(0)}ms at x=${randomX.toFixed(2)}`);
+            
             const timer = setTimeout(() => {
                 // Check if bot still exists and game is still playing
                 const botIndex = players.findIndex(p => p.id === bot.id);
-                if (botIndex === -1) return; // Bot was removed
+                if (botIndex === -1) {
+                    console.log(`[Bot] ${bot.name} was removed before drop`);
+                    botDropTimers.delete(bot.id);
+                    return; // Bot was removed
+                }
                 
                 const currentBot = players[botIndex];
                 
-                // Check if bot has already dropped or finished
-                if (droppedBalls.has(bot.id) || currentBot.finished) return;
+                // Double-check if bot has already dropped or finished (race condition protection)
+                if (droppedBalls.has(bot.id)) {
+                    console.log(`[Bot] ${bot.name} already dropped (race condition)`);
+                    botDropTimers.delete(bot.id);
+                    return;
+                }
+                
+                if (currentBot.finished) {
+                    console.log(`[Bot] ${bot.name} already finished`);
+                    botDropTimers.delete(bot.id);
+                    return;
+                }
                 
                 // Check if game is still in PLAYING phase
-                if (gamePhase !== 'PLAYING') return;
+                if (gamePhase !== 'PLAYING') {
+                    console.log(`[Bot] Game phase changed to ${gamePhase}, cancelling drop for ${bot.name}`);
+                    botDropTimers.delete(bot.id);
+                    return;
+                }
                 
-                // Mark that this bot has dropped their ball
+                // Mark that this bot has dropped their ball (do this first to prevent race conditions)
                 droppedBalls.add(bot.id);
+                
+                // Set 15-second timeout timer for bot - if bot doesn't score, give them 0 points
+                const botTimeoutTimer = setTimeout(() => {
+                    // Check if bot still exists and hasn't scored
+                    const currentBotIndex = players.findIndex(p => p.id === bot.id);
+                    if (currentBotIndex !== -1 && !players[currentBotIndex].finished) {
+                        players[currentBotIndex].score = 0;
+                        players[currentBotIndex].finished = true;
+                        console.log(`[Timeout] Bot ${players[currentBotIndex].name} timed out - 0 points`);
+                        io.emit('state_update', { players, phase: gamePhase });
+                        checkGameOver();
+                    }
+                    // Remove timer from map
+                    scoreTimeoutTimers.delete(bot.id);
+                }, SCORE_TIMEOUT_MS);
+                
+                scoreTimeoutTimers.set(bot.id, botTimeoutTimer);
                 
                 // Broadcast the ball spawn
                 io.emit('spawn_ball', { x: randomX, playerId: bot.id });
@@ -164,6 +216,13 @@ async function startServer() {
                     if (botTimer) {
                         clearTimeout(botTimer);
                         botDropTimers.delete(removedBot.id);
+                    }
+                    
+                    // Clear bot's score timeout timer if it exists
+                    const botScoreTimer = scoreTimeoutTimers.get(removedBot.id);
+                    if (botScoreTimer) {
+                        clearTimeout(botScoreTimer);
+                        scoreTimeoutTimers.delete(removedBot.id);
                     }
                     
                     console.log('[Socket] Removed bot to make room for player');
@@ -249,6 +308,9 @@ async function startServer() {
             // Clear any existing bot timers
             botDropTimers.forEach(timer => clearTimeout(timer));
             botDropTimers.clear();
+            // Clear score timeout timers
+            scoreTimeoutTimers.forEach(timer => clearTimeout(timer));
+            scoreTimeoutTimers.clear();
             players = [];
             gamePhase = 'LOBBY';
             // Clear dropped balls tracking
@@ -267,6 +329,9 @@ async function startServer() {
             // Clear any existing bot timers
             botDropTimers.forEach(timer => clearTimeout(timer));
             botDropTimers.clear();
+            // Clear score timeout timers
+            scoreTimeoutTimers.forEach(timer => clearTimeout(timer));
+            scoreTimeoutTimers.clear();
             
             gamePhase = 'PLAYING';
             
@@ -298,6 +363,23 @@ async function startServer() {
             // Mark that this player has dropped their ball
             droppedBalls.add(socket.id);
             
+            // Set 15-second timeout timer - if player doesn't score, give them 0 points
+            const timeoutTimer = setTimeout(() => {
+                // Check if player still exists and hasn't scored
+                const currentPlayerIndex = players.findIndex(p => p.id === socket.id);
+                if (currentPlayerIndex !== -1 && !players[currentPlayerIndex].finished) {
+                    players[currentPlayerIndex].score = 0;
+                    players[currentPlayerIndex].finished = true;
+                    console.log(`[Timeout] Player ${players[currentPlayerIndex].name} timed out - 0 points`);
+                    io.emit('state_update', { players, phase: gamePhase });
+                    checkGameOver();
+                }
+                // Remove timer from map
+                scoreTimeoutTimers.delete(socket.id);
+            }, SCORE_TIMEOUT_MS);
+            
+            scoreTimeoutTimers.set(socket.id, timeoutTimer);
+            
             // Broadcast the ball spawn
             io.emit('spawn_ball', { ...data, playerId: socket.id });
         });
@@ -311,6 +393,14 @@ async function startServer() {
             if (playerIndex !== -1) {
                 players[playerIndex].score = 0;
                 players[playerIndex].finished = true;
+                
+                // Clear timeout timer since player is finished
+                const timeoutTimer = scoreTimeoutTimers.get(data.ballOwnerId);
+                if (timeoutTimer) {
+                    clearTimeout(timeoutTimer);
+                    scoreTimeoutTimers.delete(data.ballOwnerId);
+                }
+                
                 io.emit('ball_removed', { ballId: data.ballId });
                 io.emit('state_update', { players, phase: gamePhase });
                 checkGameOver();
@@ -328,6 +418,14 @@ async function startServer() {
                 if (targetPlayerId === socket.id || players[playerIndex].isBot) {
                     players[playerIndex].score = data.points;
                     players[playerIndex].finished = true;
+                    
+                    // Clear timeout timer since player scored
+                    const timeoutTimer = scoreTimeoutTimers.get(targetPlayerId);
+                    if (timeoutTimer) {
+                        clearTimeout(timeoutTimer);
+                        scoreTimeoutTimers.delete(targetPlayerId);
+                    }
+                    
                     io.emit('state_update', { players, phase: gamePhase });
                     checkGameOver();
                 }
