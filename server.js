@@ -63,6 +63,11 @@ async function startServer() {
         socket.emit('state_update', { players, phase: gamePhase });
 
         socket.on('join_game', (newPlayer) => {
+            // Check if max player limit has been reached
+            if (players.length >= 50) {
+                socket.emit('error_message', 'Max player limit has been reached');
+                return;
+            }
             if (players.some(p => p.name.toLowerCase() === newPlayer.name.toLowerCase())) {
                 socket.emit('error_message', 'Name already taken');
                 return;

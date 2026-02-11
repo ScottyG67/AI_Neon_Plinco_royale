@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Player, GamePhase } from '../types';
 import { Button } from './Button';
-import { Users, UserPlus, Play, Eye } from 'lucide-react';
+import { Users, UserPlus, Play, Eye, AlertCircle, X } from 'lucide-react';
 
 interface PlayersPanelProps {
   players: Player[];
@@ -13,6 +13,7 @@ interface PlayersPanelProps {
   isSpectator: boolean;
   setIsSpectator: (val: boolean) => void;
   error: string;
+  onErrorClose: () => void;
   isConnected: boolean;
   handleAddPlayer: (e?: React.FormEvent) => void;
   handleStartGame: () => void;
@@ -28,6 +29,7 @@ export const PlayersPanel: React.FC<PlayersPanelProps> = ({
   isSpectator,
   setIsSpectator,
   error,
+  onErrorClose,
   isConnected,
   handleAddPlayer,
   handleStartGame
@@ -164,8 +166,20 @@ export const PlayersPanel: React.FC<PlayersPanelProps> = ({
                 Join as Spectator
               </label>
             </div>
-
-            {error && <p className="text-red-500 text-xs font-bold animate-pulse">{error}</p>}
+            
+            {error && (
+              <div className="bg-slate-900 border-2 border-red-500 p-3 rounded-xl shadow-[0_0_20px_rgba(255,0,0,0.5)] flex items-center gap-2 animate-fade-in">
+                <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+                <p className="text-red-400 font-bold text-xs flex-1">{error}</p>
+                <button
+                  onClick={onErrorClose}
+                  className="text-slate-400 hover:text-white transition-colors shrink-0"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             
             <Button 
               type="submit" 

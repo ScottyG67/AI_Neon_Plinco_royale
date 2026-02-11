@@ -536,6 +536,7 @@ const App = () => {
           isSpectator={isSpectator}
           setIsSpectator={setIsSpectator}
           error={error}
+          onErrorClose={() => setError('')}
           isConnected={isConnected}
           handleAddPlayer={handleAddPlayer}
           handleStartGame={handleStartGame}
