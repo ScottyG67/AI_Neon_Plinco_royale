@@ -232,6 +232,12 @@ const App = () => {
     resumeAudio();
   };
 
+  const handleAddBot = () => {
+    if (socketRef.current) {
+        socketRef.current.emit('add_bot');
+    }
+  };
+
   const handleStartGame = () => {
     if (socketRef.current) {
         socketRef.current.emit('start_game');
@@ -244,8 +250,11 @@ const App = () => {
   };
 
   const handleScoreUpdate = (playerId: string, points: number) => {
-    if (socketRef.current && playerId === socketRef.current.id) {
-        socketRef.current.emit('score_update', { points });
+    if (socketRef.current) {
+        // Allow reporting own score or bot scores (bots don't have socket connections)
+        if (playerId === socketRef.current.id || playerId.startsWith('bot-')) {
+            socketRef.current.emit('score_update', { points, playerId });
+        }
     }
   };
 
@@ -539,6 +548,7 @@ const App = () => {
           onErrorClose={() => setError('')}
           isConnected={isConnected}
           handleAddPlayer={handleAddPlayer}
+          handleAddBot={handleAddBot}
           handleStartGame={handleStartGame}
         />
 

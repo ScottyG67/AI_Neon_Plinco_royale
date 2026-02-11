@@ -56,6 +56,94 @@ async function startServer() {
     let gamePhase = 'LOBBY';
     // Track which players have dropped their ball this round
     const droppedBalls = new Set();
+    // Bot counter for unique bot names
+    let botCounter = 1;
+    
+    // Synthwave-themed bot name components
+    const synthwavePrefixes = [
+        'Neon', 'Cyber', 'Synth', 'Pulse', 'Arc', 'Flux', 'Matrix', 'Grid',
+        'Vector', 'Byte', 'Pixel', 'Wave', 'Laser', 'Glitch', 'Vapor', 'Retro',
+        'Digital', 'Electric', 'Photon', 'Quantum', 'Nexus', 'Vortex', 'Prism',
+        'Crystal', 'Shadow', 'Echo', 'Rift', 'Zero', 'Alpha', 'Omega', 'Nova'
+    ];
+    
+    const synthwaveSuffixes = [
+        'Runner', 'Drift', 'Core', 'Drive', 'Zone', 'Edge', 'Blade', 'Strike',
+        'Pulse', 'Wave', 'Beam', 'Ray', 'Flash', 'Spark', 'Bolt', 'Surge',
+        'Rider', 'Hunter', 'Seeker', 'Ghost', 'Phantom', 'Void', 'Void',
+        'Storm', 'Fire', 'Ice', 'Tech', 'Link', 'Node', 'Grid', 'System'
+    ];
+    
+    function generateSynthwaveBotName() {
+        // Randomly choose between different name formats
+        const format = Math.random();
+        
+        if (format < 0.4) {
+            // Format: "Neon-Runner" or "Cyber-Drift"
+            const prefix = synthwavePrefixes[Math.floor(Math.random() * synthwavePrefixes.length)];
+            const suffix = synthwaveSuffixes[Math.floor(Math.random() * synthwaveSuffixes.length)];
+            return `${prefix}-${suffix}`;
+        } else if (format < 0.7) {
+            // Format: "Neon-42" or "Cyber-1984"
+            const prefix = synthwavePrefixes[Math.floor(Math.random() * synthwavePrefixes.length)];
+            const number = Math.floor(Math.random() * 9999) + 1;
+            return `${prefix}-${number}`;
+        } else {
+            // Format: "SYNTH-01" or "NEXUS-99"
+            const prefix = synthwavePrefixes[Math.floor(Math.random() * synthwavePrefixes.length)].toUpperCase();
+            const number = String(Math.floor(Math.random() * 99) + 1).padStart(2, '0');
+            return `${prefix}-${number}`;
+        }
+    }
+    // Track bot drop timers to clear them if needed
+    const botDropTimers = new Map();
+    // Game constants
+    const LOGICAL_WIDTH = 600;
+    const PLAY_BOUNDS_PADDING = 20; // Padding from edges
+
+    // --- BOT LOGIC ---
+    function scheduleBotDrops() {
+        // Get all bots that are not spectators
+        const bots = players.filter(p => p.isBot && !p.isSpectator && !p.finished);
+        
+        bots.forEach(bot => {
+            // Random drop time between 1-5 seconds (in milliseconds)
+            const dropDelay = 1000 + Math.random() * 4000; // 1000ms to 5000ms
+            
+            // Random x position within play bounds
+            const minX = PLAY_BOUNDS_PADDING;
+            const maxX = LOGICAL_WIDTH - PLAY_BOUNDS_PADDING;
+            const randomX = minX + Math.random() * (maxX - minX);
+            
+            const timer = setTimeout(() => {
+                // Check if bot still exists and game is still playing
+                const botIndex = players.findIndex(p => p.id === bot.id);
+                if (botIndex === -1) return; // Bot was removed
+                
+                const currentBot = players[botIndex];
+                
+                // Check if bot has already dropped or finished
+                if (droppedBalls.has(bot.id) || currentBot.finished) return;
+                
+                // Check if game is still in PLAYING phase
+                if (gamePhase !== 'PLAYING') return;
+                
+                // Mark that this bot has dropped their ball
+                droppedBalls.add(bot.id);
+                
+                // Broadcast the ball spawn
+                io.emit('spawn_ball', { x: randomX, playerId: bot.id });
+                
+                console.log(`[Bot] ${bot.name} dropped ball at x=${randomX.toFixed(2)}`);
+                
+                // Remove timer from map
+                botDropTimers.delete(bot.id);
+            }, dropDelay);
+            
+            // Store timer so we can clear it if needed
+            botDropTimers.set(bot.id, timer);
+        });
+    }
 
     // --- SOCKET LOGIC ---
     io.on('connection', (socket) => {
@@ -63,10 +151,27 @@ async function startServer() {
         socket.emit('state_update', { players, phase: gamePhase });
 
         socket.on('join_game', (newPlayer) => {
-            // Check if max player limit has been reached
+            // If at limit, remove a bot to make room for real player
             if (players.length >= 50) {
-                socket.emit('error_message', 'Max player limit has been reached');
-                return;
+                const botIndex = players.findIndex(p => p.isBot);
+                if (botIndex !== -1) {
+                    // Remove a bot to make room
+                    const removedBot = players[botIndex];
+                    players.splice(botIndex, 1);
+                    
+                    // Clear bot's drop timer if it exists
+                    const botTimer = botDropTimers.get(removedBot.id);
+                    if (botTimer) {
+                        clearTimeout(botTimer);
+                        botDropTimers.delete(removedBot.id);
+                    }
+                    
+                    console.log('[Socket] Removed bot to make room for player');
+                } else {
+                    // No bots to remove, reject the join
+                    socket.emit('error_message', 'Max player limit has been reached');
+                    return;
+                }
             }
             if (players.some(p => p.name.toLowerCase() === newPlayer.name.toLowerCase())) {
                 socket.emit('error_message', 'Name already taken');
@@ -74,6 +179,47 @@ async function startServer() {
             }
             const player = { ...newPlayer, id: socket.id };
             players.push(player);
+            io.emit('state_update', { players, phase: gamePhase });
+        });
+
+        socket.on('add_bot', () => {
+            // Check if max player limit has been reached
+            if (players.length >= 50) {
+                socket.emit('error_message', 'Max player limit has been reached');
+                return;
+            }
+            
+            // Generate unique synthwave-themed bot name
+            let botName;
+            let attempts = 0;
+            do {
+                botName = generateSynthwaveBotName();
+                attempts++;
+                // Fallback to numbered name if we can't find a unique synthwave name after many attempts
+                if (attempts > 50) {
+                    botName = `Neon-${botCounter}`;
+                    botCounter++;
+                }
+            } while (players.some(p => p.name.toLowerCase() === botName.toLowerCase()));
+            
+            // Generate random color for bot
+            const botColor = `hsl(${Math.random() * 360}, 100%, 50%)`;
+            
+            // Create bot player (no socket ID needed, use bot- prefix)
+            const botId = `bot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const bot = {
+                id: botId,
+                name: botName,
+                score: null,
+                color: botColor,
+                isCheater: false,
+                isBot: true,
+                isSpectator: false,
+                finished: false
+            };
+            
+            players.push(bot);
+            console.log(`[Socket] Bot added: ${botName} (${botId})`);
             io.emit('state_update', { players, phase: gamePhase });
         });
 
@@ -87,12 +233,22 @@ async function startServer() {
                 }));
                 // Clear dropped balls tracking for new game
                 droppedBalls.clear();
+                // Clear any existing bot timers
+                botDropTimers.forEach(timer => clearTimeout(timer));
+                botDropTimers.clear();
+                
+                // Schedule bot ball drops
+                scheduleBotDrops();
+                
                 io.emit('state_update', { players, phase: gamePhase });
             }
         });
 
         socket.on('reset_lobby', () => {
             console.log('[Socket] Lobby reset requested');
+            // Clear any existing bot timers
+            botDropTimers.forEach(timer => clearTimeout(timer));
+            botDropTimers.clear();
             players = [];
             gamePhase = 'LOBBY';
             // Clear dropped balls tracking
@@ -108,7 +264,15 @@ async function startServer() {
             }));
             // Clear dropped balls tracking for new round
             droppedBalls.clear();
+            // Clear any existing bot timers
+            botDropTimers.forEach(timer => clearTimeout(timer));
+            botDropTimers.clear();
+            
             gamePhase = 'PLAYING';
+            
+            // Schedule bot ball drops for new round
+            scheduleBotDrops();
+            
             io.emit('state_update', { players, phase: gamePhase });
         });
 
@@ -154,12 +318,19 @@ async function startServer() {
         });
 
         socket.on('score_update', (data) => {
-            const playerIndex = players.findIndex(p => p.id === socket.id);
+            // Handle bot scores (playerId provided) or regular player scores (use socket.id)
+            const targetPlayerId = data.playerId || socket.id;
+            const playerIndex = players.findIndex(p => p.id === targetPlayerId);
+            
             if (playerIndex !== -1) {
-                players[playerIndex].score = data.points;
-                players[playerIndex].finished = true;
-                io.emit('state_update', { players, phase: gamePhase });
-                checkGameOver();
+                // For bots, any client can report the score
+                // For regular players, only the player themselves can report (enforced by socket.id check)
+                if (targetPlayerId === socket.id || players[playerIndex].isBot) {
+                    players[playerIndex].score = data.points;
+                    players[playerIndex].finished = true;
+                    io.emit('state_update', { players, phase: gamePhase });
+                    checkGameOver();
+                }
             }
         });
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Player, GamePhase } from '../types';
 import { Button } from './Button';
-import { Users, UserPlus, Play, Eye, AlertCircle, X } from 'lucide-react';
+import { Users, UserPlus, Play, Eye, AlertCircle, X, Bot } from 'lucide-react';
 
 interface PlayersPanelProps {
   players: Player[];
@@ -16,6 +16,7 @@ interface PlayersPanelProps {
   onErrorClose: () => void;
   isConnected: boolean;
   handleAddPlayer: (e?: React.FormEvent) => void;
+  handleAddBot: () => void;
   handleStartGame: () => void;
 }
 
@@ -32,6 +33,7 @@ export const PlayersPanel: React.FC<PlayersPanelProps> = ({
   onErrorClose,
   isConnected,
   handleAddPlayer,
+  handleAddBot,
   handleStartGame
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
@@ -194,7 +196,16 @@ export const PlayersPanel: React.FC<PlayersPanelProps> = ({
       )}
 
       {phase === GamePhase.LOBBY && amIJoined && (
-        <div className="mt-2 md:mt-4 shrink-0">
+        <div className="mt-2 md:mt-4 shrink-0 space-y-2">
+          <Button 
+            onClick={handleAddBot} 
+            disabled={players.length >= 50}
+            variant="secondary"
+            className="w-full flex items-center justify-center gap-2 py-1.5 md:py-2 text-xs md:text-sm"
+          >
+            <Bot className="w-4 h-4 md:w-5 md:h-5" />
+            Add Bot
+          </Button>
           <Button 
             onClick={handleStartGame} 
             disabled={players.filter(p => !p.isSpectator).length === 0} 

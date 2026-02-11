@@ -291,8 +291,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
                      const ballPlayerId = ball.label.split('ball-')[1];
                      
                      // Authoritative check: Do I own this ball?
-                     // If so, I report the score.
-                     if (ballPlayerId === myIdRef.current) {
+                     // For bots, any client can report the score (bots don't have a socket connection)
+                     const isBot = ballPlayerId.startsWith('bot-');
+                     if (ballPlayerId === myIdRef.current || isBot) {
                          callbacksRef.current.onScoreUpdate(ballPlayerId, points);
                      }
 
