@@ -18,12 +18,11 @@ interface GameCanvasProps {
   phase: GamePhase;
   onScoreUpdate: (playerId: string, score: number) => void;
   onBallDestroyed: (ballId: string, ballOwnerId: string) => void;
-  onGameFinish: () => void;
   socket: Socket | null;
   myId: string | null;
 }
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreUpdate, onBallDestroyed, onGameFinish, socket, myId }) => {
+export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreUpdate, onBallDestroyed, socket, myId }) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Matter.Engine | null>(null);
@@ -38,11 +37,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
   const [hasDroppedBall, setHasDroppedBall] = useState(false);
   
   // Refs for callbacks/state to avoid stale closures in event listeners/timeouts
-  const callbacksRef = useRef({ onScoreUpdate, onGameFinish, onBallDestroyed });
+  const callbacksRef = useRef({ onScoreUpdate, onBallDestroyed });
   const playersRef = useRef(players);
   const lasersRef = useRef<Laser[]>([]);
   const socketRef = useRef(socket);
   const myIdRef = useRef(myId);
+  // Track last laser fire time for cooldown (0.5 seconds)
+  const lastLaserFireTimeRef = useRef<number>(0);
+  const LASER_COOLDOWN_MS = 500;
 
   // Handle Resizing
   useEffect(() => {
@@ -84,11 +86,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
 
   // Sync refs
   useEffect(() => {
-    callbacksRef.current = { onScoreUpdate, onGameFinish, onBallDestroyed };
+    callbacksRef.current = { onScoreUpdate, onBallDestroyed };
     playersRef.current = players;
     socketRef.current = socket;
     myIdRef.current = myId;
-  }, [onScoreUpdate, onGameFinish, onBallDestroyed, players, socket, myId]);
+  }, [onScoreUpdate, onBallDestroyed, players, socket, myId]);
 
   // --- Network Event Listeners ---
   useEffect(() => {
@@ -379,6 +381,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ players, phase, onScoreU
 
   const handleSpectatorBlast = (e: React.MouseEvent) => {
       if (!engineRef.current || !myPlayer || !socketRef.current) return;
+
+      // Check cooldown (0.5 seconds)
+      const now = Date.now();
+      const timeSinceLastFire = now - lastLaserFireTimeRef.current;
+      if (timeSinceLastFire < LASER_COOLDOWN_MS) {
+          return; // Still on cooldown
+      }
+
+      // Update last fire time
+      lastLaserFireTimeRef.current = now;
 
       // 1. Send Visuals
       const startX = Math.random() > 0.5 ? 0 : LOGICAL_WIDTH;

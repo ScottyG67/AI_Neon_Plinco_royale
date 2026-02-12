@@ -5,7 +5,7 @@ import { GameCanvas } from './components/GameCanvas';
 import { WinnerToast } from './components/WinnerToast';
 import { PlayersPanel } from './components/PlayersPanel';
 import { COLORS, CHEAT_NAME } from './constants';
-import { Users, UserPlus, Play, RotateCcw, Bot, Eye, Music, Music2, Wifi, WifiOff, Settings, X, Info, Github, Zap } from 'lucide-react';
+import { RotateCcw, Music, Music2, Wifi, WifiOff, Settings, X, Info, Github, Zap } from 'lucide-react';
 import { VolumeSlider } from './components/VolumeSlider';
 import { VolumeLauncer } from './components/VolumeLauncer';
 import { resumeAudio, toggleMusic, getMusicState, setMusicVolume, setSfxVolume } from './audio';
@@ -258,9 +258,6 @@ const App = () => {
     resumeAudio();
   };
 
-  const handleGameFinish = () => {
-    // Handled by server state
-  };
 
   const handleScoreUpdate = (playerId: string, points: number) => {
     if (socketRef.current) {
@@ -581,7 +578,6 @@ const App = () => {
               phase={phase}
               onScoreUpdate={handleScoreUpdate}
               onBallDestroyed={handleBallDestroyed}
-              onGameFinish={handleGameFinish} 
               socket={socketRef.current}
               myId={myId}
             />
